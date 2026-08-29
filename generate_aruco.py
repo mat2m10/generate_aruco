@@ -98,10 +98,44 @@ def build_pdf(
 
     c = canvas.Canvas(out_path, pagesize=PAGE_SIZES[page_size_name])
 
+    # Available horizontal space for each marker's label, in points. Labels
+    # must never be wider than this or they run into the neighbouring
+    # marker's label (this is what caused overlapping text at small sizes).
+    avail_label_w_pt = (cell_mm - 1) * mm
+
+    def fit_label(candidates):
+        """Return (text, font_size) for the most informative candidate string
+        that fits avail_label_w_pt, shrinking the font down to 3pt before
+        falling back to a shorter candidate."""
+        for text in candidates:
+            size = 6.0
+            while size >= 3.0:
+                if c.stringWidth(text, "Helvetica", size) <= avail_label_w_pt:
+                    return text, size
+                size -= 0.5
+        # Nothing fit even at 3pt (extremely tiny marker) - truncate the
+        # shortest candidate as a last resort.
+        text = candidates[-1]
+        while len(text) > 1 and c.stringWidth(text, "Helvetica", 3.0) > avail_label_w_pt:
+            text = text[:-1]
+        return text, 3.0
+
+    header = f"{dict_name}, {size_mm:.1f}mm markers"
+    if not unique_ids and copies > 1:
+        header += f"  (IDs 0-{count - 1} repeat per set; set number shown as ·Sn)"
+
+    def draw_header():
+        c.setFont("Helvetica", 7)
+        c.setFillColorRGB(0.3, 0.3, 0.3)
+        c.drawString(PAGE_MARGIN_MM * mm, (page_h / mm - PAGE_MARGIN_MM + 3) * mm, header)
+
+    draw_header()
+
     for idx, (copy_idx, marker_id) in enumerate(jobs):
         pos_on_page = idx % per_page
         if idx > 0 and pos_on_page == 0:
             c.showPage()
+            draw_header()
         row = pos_on_page // cols
         col = pos_on_page % cols
 
@@ -130,11 +164,18 @@ def build_pdf(
         c.rect(x_mm * mm, y_mm * mm, size_mm * mm, size_mm * mm, stroke=1, fill=0)
         c.setDash()
 
-        # Label: marker ID (+ copy/face number when reusing IDs per copy)
-        label = f"ID {marker_id}"
+        # Label: marker ID (+ compact set indicator when reusing IDs per
+        # copy). Candidates are ordered most-to-least informative; fit_label
+        # picks the first that fits the cell, shrinking font size first and
+        # falling back to a shorter string only if it still doesn't fit.
+        candidates = []
         if not unique_ids and copies > 1:
-            label += f"  ({dict_name}, set {copy_idx + 1})"
-        c.setFont("Helvetica", 6)
+            candidates.append(f"ID {marker_id} \u00b7S{copy_idx + 1}")
+        candidates.append(f"ID {marker_id}")
+        candidates.append(f"{marker_id}")
+        label, font_size = fit_label(candidates)
+
+        c.setFont("Helvetica", font_size)
         c.setFillColorRGB(0, 0, 0)
         c.drawCentredString(
             (x_mm + size_mm / 2) * mm,
