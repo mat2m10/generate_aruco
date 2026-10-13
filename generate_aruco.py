@@ -53,6 +53,23 @@ GAP_MM = 4  # gap between adjacent marker cells
 PAGE_MARGIN_MM = 10
 
 
+def _positive(type_):
+    def check(value):
+        v = type_(value)
+        if not v > 0:
+            raise argparse.ArgumentTypeError(f"must be > 0, got {value}")
+        return v
+
+    return check
+
+
+def _non_negative_int(value):
+    v = int(value)
+    if v < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {value}")
+    return v
+
+
 def generate_marker_image(dictionary, marker_id: int, size_mm: float) -> Image.Image:
     """Render one ArUco marker (with a 1-module quiet-zone border) as a PIL image."""
     side_px = max(int(round(size_mm * PX_PER_MM)), 100)
@@ -92,6 +109,14 @@ def build_pdf(
     cell_h_mm = size_mm + LABEL_HEIGHT_MM + GAP_MM
     usable_w = (page_w / mm) - 2 * PAGE_MARGIN_MM
     usable_h = (page_h / mm) - 2 * PAGE_MARGIN_MM
+    # One cell without its trailing gap must fit, or the marker would run
+    # off the page.
+    if cell_mm - GAP_MM > usable_w or cell_h_mm - GAP_MM > usable_h:
+        raise ValueError(
+            f"a {size_mm:g}mm marker (plus label) does not fit in the "
+            f"{usable_w:.0f}x{usable_h:.0f}mm printable area of "
+            f"{page_size_name.upper()} paper. Use a smaller --size."
+        )
     cols = max(int(usable_w // cell_mm), 1)
     rows = max(int(usable_h // cell_h_mm), 1)
     per_page = cols * rows
@@ -197,17 +222,17 @@ def parse_args(argv=None):
         description="Generate a print-ready PDF sheet of ArUco markers at exact physical size."
     )
     p.add_argument(
-        "--size", type=float, required=True, help="Marker side length in mm (print size)."
+        "--size", type=_positive(float), required=True, help="Marker side length in mm (print size)."
     )
     p.add_argument(
         "--count",
-        type=int,
+        type=_positive(int),
         required=True,
         help="Number of markers per set (e.g. 6 for a hexagon's faces).",
     )
     p.add_argument(
         "--copies",
-        type=int,
+        type=_positive(int),
         default=1,
         help="How many copies of the set to print (e.g. one per physical hexagon). Default: 1.",
     )
@@ -219,7 +244,7 @@ def parse_args(argv=None):
         help="ArUco dictionary to use. Default: 4X4_50.",
     )
     p.add_argument(
-        "--start-id", type=int, default=0, help="First marker ID to use. Default: 0."
+        "--start-id", type=_non_negative_int, default=0, help="First marker ID to use. Default: 0."
     )
     p.add_argument(
         "--unique-ids",
@@ -258,16 +283,20 @@ def main(argv=None):
             file=sys.stderr,
         )
         return 1
-    build_pdf(
-        out_path=args.out,
-        size_mm=args.size,
-        count=args.count,
-        copies=args.copies,
-        dict_name=args.dict_name,
-        unique_ids=args.unique_ids,
-        page_size_name=args.page_size_name,
-        start_id=args.start_id,
-    )
+    try:
+        build_pdf(
+            out_path=args.out,
+            size_mm=args.size,
+            count=args.count,
+            copies=args.copies,
+            dict_name=args.dict_name,
+            unique_ids=args.unique_ids,
+            page_size_name=args.page_size_name,
+            start_id=args.start_id,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
