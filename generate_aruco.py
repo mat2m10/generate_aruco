@@ -150,7 +150,10 @@ def build_pdf(
 
     header = f"{dict_name}, {size_mm:.1f}mm markers"
     if not unique_ids and copies > 1:
-        header += f"  (IDs 0-{count - 1} repeat per set; set number shown as ·Sn)"
+        header += (
+            f"  (IDs {start_id}-{start_id + count - 1} repeat per set; "
+            "set number shown as ·Sn)"
+        )
 
     def draw_header():
         c.setFont("Helvetica", 7)
