@@ -254,18 +254,22 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    max_id = 50
-    if "50" in args.dict_name:
-        max_id = 50
-    elif "100" in args.dict_name:
-        max_id = 100
-    elif "250" in args.dict_name:
-        max_id = 250
-    if not args.unique_ids and args.start_id + args.count > max_id:
+    # Number of IDs the dictionary really holds (50/100/250, 1024 for ORIGINAL).
+    dictionary = aruco.getPredefinedDictionary(DICTIONARIES[args.dict_name])
+    n_ids = len(dictionary.bytesList)
+    # With --unique-ids every printed marker gets its own ID.
+    n_needed = args.count * (args.copies if args.unique_ids else 1)
+    if args.start_id + n_needed > n_ids:
+        what = (
+            f"--count {args.count} x --copies {args.copies} (--unique-ids)"
+            if args.unique_ids
+            else f"--count {args.count}"
+        )
         print(
-            f"Error: {args.dict_name} only has IDs 0-{max_id - 1}, but "
-            f"--start-id {args.start_id} + --count {args.count} exceeds that. "
-            "Pick a larger dictionary (e.g. --dict 4X4_250) or reduce --count.",
+            f"Error: {args.dict_name} only has IDs 0-{n_ids - 1}, but "
+            f"--start-id {args.start_id} + {what} needs IDs up to "
+            f"{args.start_id + n_needed - 1}. Pick a dictionary with more IDs "
+            "(*_100, *_250 or ORIGINAL) or use fewer IDs.",
             file=sys.stderr,
         )
         return 1
