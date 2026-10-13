@@ -51,19 +51,18 @@ PX_PER_MM = 12  # marker raster resolution before embedding in the PDF
 LABEL_HEIGHT_MM = 4.5  # space reserved below each marker for its ID text
 GAP_MM = 4  # gap between adjacent marker cells
 PAGE_MARGIN_MM = 10
+# White quiet zone kept around each marker, as a fraction of the marker side.
+# It is left blank on the page (inside the cut guide) rather than baked into
+# the marker bitmap, so the black marker itself prints at exactly --size mm.
+QUIET_ZONE_FRAC = 0.12
 
 
 def generate_marker_image(dictionary, marker_id: int, size_mm: float) -> Image.Image:
-    """Render one ArUco marker (with a 1-module quiet-zone border) as a PIL image."""
+    """Render one ArUco marker (black outer edge to black outer edge, no
+    quiet zone) as a PIL image. The caller draws it at exactly size_mm."""
     side_px = max(int(round(size_mm * PX_PER_MM)), 100)
     marker_px = aruco.generateImageMarker(dictionary, marker_id, side_px)
-    img = Image.fromarray(marker_px).convert("L")
-    # Add a white quiet-zone border (~10% of marker size on each side) so the
-    # marker is reliably detectable right up to where it's cut/glued.
-    border = max(int(side_px * 0.12), 4)
-    bordered = Image.new("L", (side_px + 2 * border, side_px + 2 * border), 255)
-    bordered.paste(img, (border, border))
-    return bordered
+    return Image.fromarray(marker_px).convert("L")
 
 
 def build_pdf(
@@ -88,8 +87,12 @@ def build_pdf(
         ids = list(range(start_id, start_id + count))
         jobs = [(c, mid) for c in range(copies) for mid in ids]
 
-    cell_mm = size_mm + GAP_MM
-    cell_h_mm = size_mm + LABEL_HEIGHT_MM + GAP_MM
+    # Each cell holds the marker plus its white quiet zone on every side (the
+    # area inside the cut guide), then the label and the gap to the next cell.
+    quiet_mm = size_mm * QUIET_ZONE_FRAC
+    outer_mm = size_mm + 2 * quiet_mm  # cut-guide square
+    cell_mm = outer_mm + GAP_MM
+    cell_h_mm = outer_mm + LABEL_HEIGHT_MM + GAP_MM
     usable_w = (page_w / mm) - 2 * PAGE_MARGIN_MM
     usable_h = (page_h / mm) - 2 * PAGE_MARGIN_MM
     cols = max(int(usable_w // cell_mm), 1)
@@ -139,10 +142,11 @@ def build_pdf(
         row = pos_on_page // cols
         col = pos_on_page % cols
 
-        x_mm = PAGE_MARGIN_MM + col * cell_mm
+        # (x_mm, y_mm) is the bottom-left corner of the black marker itself.
+        x_mm = PAGE_MARGIN_MM + col * cell_mm + quiet_mm
         # y measured from top of page down, then flipped for reportlab's
         # bottom-left origin
-        y_from_top_mm = PAGE_MARGIN_MM + row * cell_h_mm
+        y_from_top_mm = PAGE_MARGIN_MM + row * cell_h_mm + quiet_mm
         y_mm = (page_h / mm) - y_from_top_mm - size_mm
 
         img = generate_marker_image(dictionary, marker_id, size_mm)
@@ -157,11 +161,18 @@ def build_pdf(
             height=size_mm * mm,
         )
 
-        # Cut guide around the marker
+        # Cut guide around the marker, enclosing its white quiet zone
         c.setLineWidth(0.2)
         c.setStrokeColorRGB(0.6, 0.6, 0.6)
         c.setDash(2, 2)
-        c.rect(x_mm * mm, y_mm * mm, size_mm * mm, size_mm * mm, stroke=1, fill=0)
+        c.rect(
+            (x_mm - quiet_mm) * mm,
+            (y_mm - quiet_mm) * mm,
+            outer_mm * mm,
+            outer_mm * mm,
+            stroke=1,
+            fill=0,
+        )
         c.setDash()
 
         # Label: marker ID (+ compact set indicator when reusing IDs per
@@ -179,7 +190,7 @@ def build_pdf(
         c.setFillColorRGB(0, 0, 0)
         c.drawCentredString(
             (x_mm + size_mm / 2) * mm,
-            (y_mm - LABEL_HEIGHT_MM + 1) * mm,
+            (y_mm - quiet_mm - LABEL_HEIGHT_MM + 1) * mm,
             label,
         )
 

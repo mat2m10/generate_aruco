@@ -33,8 +33,11 @@ python generate_aruco.py --size <mm> --count <n> --copies <n> --out <file.pdf>
 | `--page` | `a4` or `letter` | `a4` |
 | `--out` | Output PDF path | `markers.pdf` |
 
-Each marker is drawn with a white quiet-zone border, a dashed cut guide, and
-a small ID label underneath. **Print at 100% scale** (disable "fit to page"
+The black marker square measures exactly `--size` mm (this is the marker
+length to give your pose-estimation code). Each marker also gets a white
+quiet zone of 12% of `--size` on every side, a dashed cut guide around that
+quiet zone (so the cut-out square is about `1.24 × --size`), and a small ID
+label underneath. **Print at 100% scale** (disable "fit to page"
 or "scale to fit" in your print dialog) or the physical size will be wrong.
 
 ## Example: one hexagon, 20mm faces
